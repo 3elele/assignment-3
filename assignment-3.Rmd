@@ -1,0 +1,352 @@
+---
+title: "assignment-3"
+author: "Gabriele Chignoli"
+date: "11/22/2017"
+output: html_document
+---
+
+## Exercise 1: Simple data manipulation with dplyr
+
+```{r echo=F}
+`%>%` <- magrittr::`%>%`
+```
+
+#### Task A
+
+Number of lines resulting from the filter on 3 dictionaries from the data :
+
+```{r echo=F}
+stress_shift_3dict <- dplyr::filter(stressshift::stress_shift_unamb, Dict == "W1802" | Dict == "J1917" | Dict =="C1687")
+print(nrow(stress_shift_3dict))
+```
+
+#### Task B
+
+We re-do the first task, this time using a forward pipe operator and we'll test if the result we obtain is identical to the first obtained :
+
+```{r echo=F}
+stress_shift_3dict_using_pipe <- stressshift::stress_shift_unamb %>% subset(Dict == "W1802" | Dict == "J1917" | Dict =="C1687")
+identical(stress_shift_3dict, stress_shift_3dict_using_pipe)
+```
+
+#### Task C
+
+Here we create a list for all nouns and one for all verbs from our 3 dictionaries data, we'll bind them in one new table, change the order of arguments in the table and verify if the new table did what we expected.
+
+```{r echo=F}
+stress_shift_3dict_nouns <- stress_shift_3dict %>% dplyr::filter(Category=="Noun")
+stress_shift_3dict_verbs <- stress_shift_3dict %>% dplyr::filter(Category=="Verb")
+stress_shift_3dict_using_bind <- stress_shift_3dict_nouns %>% dplyr::bind_rows(stress_shift_3dict_verbs)
+stress_shift_3dict_using_bind_reversed <- stress_shift_3dict_verbs %>% dplyr::bind_rows(stress_shift_3dict_nouns)
+print(stress_shift_3dict %>% identical(stress_shift_3dict_using_bind))
+print(stress_shift_3dict %>% identical(stress_shift_3dict_using_bind_reversed))
+```
+
+#### Task D
+
+Manipulating here all data we'll create a new table filtering by noun and verb and taking just the informations we need. The new table has all the columns from both the tables we join but less rows, that's because we keep just rows whose values appear in both tables in a coherent way.
+
+```{r}
+stress_shift_nouns_renamed <- stressshift::stress_shift_unamb %>% dplyr::filter(Category=="Noun") %>% dplyr::select(Word, Dict, Syllable) %>% dplyr::rename(Syllable_Noun = Syllable)
+
+stress_shift_verbs_renamed <- stressshift::stress_shift_unamb %>% dplyr::filter(Category=="Noun") %>% dplyr::select(Word, Dict, Syllable) %>% dplyr::rename(Syllable_Verb = Syllable)
+
+stress_shift_wide <- dplyr::inner_join(stress_shift_nouns_renamed, stress_shift_verbs_renamed)
+```
+
+#### Task E
+
+```{r, echo=FALSE}
+ggplot2::ggplot(stressshift::stress_shift_unamb,
+                ggplot2::aes(x=Category, fill=Syllable)) +
+  ggplot2::geom_bar(position="dodge", colour="black") + 
+  ggplot2::scale_fill_brewer(palette="Set3")
+```
+
+#### Task F
+
+Here we have a new table which will show only if it has 149 lines, it presents the percentage of words having the stress on the first syllable in our data.
+
+```{r echo=F}
+stress_shift_byword <- stress_shift_wide %>% dplyr::group_by(Word) %>% dplyr::summarize(Noun_Percent_Syll_1=sum(Syllable_Noun=="Syllable 1")/n(), Verb_Percent_Syll_1=sum(Syllable_Verb=="Syllable 1")/n())
+if(nrow(stress_shift_byword)==149) {
+      print(stress_shift_byword)
+    } else {
+      print("New table doesn't match 149 lines")
+    }
+```
+
+#### Task G
+
+```{r echo=FALSE}
+stress_shift_byword %>%  ggplot2::ggplot(ggplot2::aes(Noun_Percent_Syll_1, Verb_Percent_Syll_1)) + ggplot2::labs(title="First syllable words percentage") + ggplot2::geom_point(alpha = 0.25)
+```
+
+#### Task H
+
+```{r echo=F}
+stress_shift_byword_all <- stressshift::stress_shift_unamb %>% dplyr::filter(Category == "Verb"|Category =="Noun") %>% dplyr::group_by(Word) %>% dplyr::select(Word, Dict, Syllable, Category) %>% dplyr::summarize(Noun_Percent_Syll_1=sum(Syllable=="Syllable 1" & Category=="Noun")/sum(Syllable=="Syllable 1"|Syllable=="Syllable 2" & Category=="Noun"), Verb_Percent_Syll_1=sum(Syllable=="Syllable 1" & Category=="Verb")/sum(Syllable=="Syllable 1"|Syllable=="Syllable 2" & Category=="Verb"))
+print(stress_shift_byword_all)
+```
+
+## Exercise 2: A permutation test for categorical data
+
+All functions written for this assignment will be provided from the source file:
+
+```{r}
+source("functions.R")
+```
+
+You will find there all commentaries on functions, what they do and why.
+
+#### Task A
+
+```{r echo=F}
+test_statistic <- difference_in_proportion(stressshift::stress_shift_unamb, "Syllable", "Category", "Noun", "Verb", "Syllable 1")
+print(test_statistic)
+#the result should be 0.6839201
+```
+
+#### Task B
+
+```{r echo=F}
+if(!exists(".Random.seed")) set.seed(NULL)
+previous_seed <- .Random.seed
+set.seed(1)
+ptest_stress <- permutation_twogroups(stressshift::stress_shift_unamb,
+                      "Syllable", "Category", "Noun", "Verb",
+                      difference_in_proportion,
+                      n_samples=99,
+                      "Syllable 1")
+set.seed(previous_seed)
+permutation_pvalue_right(ptest_stress)
+```
+
+```{r echo=F, message=F}
+permuted <- tibble::as_tibble(ptest_stress["permuted"])
+observed <- tibble::as_tibble(ptest_stress["observed"])
+permuted %>% ggplot2::ggplot(ggplot2::aes(x=., y=(..count..))) + ggplot2::geom_histogram(colour="black", fill="#FDD76D", binwidth = 0.005) + ggplot2::geom_vline(ggplot2::aes(xintercept=observed),colour="green")
+```
+
+## Exercise 3: Simulating new cases like our own
+
+#### Task A
+
+```{r echo=F}
+Proportion_N_Syll_1 <- stressshift::stress_shift_unamb %>% dplyr::filter(.,Category=="Noun" & Syllable =="Syllable 1") %>% nrow(.) / nrow(dplyr::filter(stressshift::stress_shift_unamb, Category=="Noun"))
+Proportion_V_Syll_1 <- stressshift::stress_shift_unamb %>% dplyr::filter(.,Category=="Verb" & Syllable =="Syllable 1") %>% nrow(.) / nrow(dplyr::filter(stressshift::stress_shift_unamb, Category=="Verb"))
+
+Noun_N_Observation <- nrow(dplyr::filter(stressshift::stress_shift_unamb, Category=="Noun"))
+Verb_N_Observation <- nrow(dplyr::filter(stressshift::stress_shift_unamb, Category=="Verb"))
+
+Noun_N_Syll_1 <- rbinom(1000, prob=Proportion_N_Syll_1, size=Noun_N_Observation)
+Verb_N_Syll_1 <- rbinom(1000, prob=Proportion_V_Syll_1, size=Noun_N_Observation)
+
+stress_shift_replications <- data.frame(
+  "Noun_Percent_Syll_1" = Noun_N_Syll_1,
+  "Verb_Percent_Syll_1" = Verb_N_Syll_1,
+  "Replication" = paste0("R", sprintf("%04d", 1:1000)),
+  "Difference_in_Proportion" = Noun_N_Syll_1/6506 - Verb_N_Syll_1/6732
+)
+
+```
+
+The first histogram shows the proportion words (nouns and verbs) having the first syllable stressed, we created binomial distributions (representing the number of times the difference take a certain value) for both categories. In order to obtain these distributions we used the number of nouns and verbs in the original data as a trial for all the 1000 observations the binomal distribution is based on and we took in account the difference in proportions for each observation. The green line indicates the result observed in the original data, it appears almost at the middle of the observations, about 0.7.
+
+```{r echo=FALSE}
+permuted <- tibble::as_tibble(stress_shift_replications["Difference_in_Proportion"])
+permuted %>% ggplot2::ggplot(.,ggplot2::aes(x=., y=..count..)) + ggplot2::geom_histogram(colour="black", fill="#FDD76D", binwidth = 0.005) + ggplot2::geom_vline(ggplot2::aes(xintercept=observed),colour="green") + ggplot2::xlim(c(-0.1, 0.8))
+```
+
+Here it is a second histogram presenting as the first the difference in proportion of first syllable stressed nouns and verbs, this time we did 99 permutation tests.
+
+```{r echo=F}
+permuted <- tibble::as_tibble(ptest_stress["permuted"])
+permuted %>% ggplot2::ggplot(.,ggplot2::aes(x=., y=..count..)) + ggplot2::geom_histogram(colour="black", fill="#FDD76D", binwidth = 0.005) + ggplot2::geom_vline(ggplot2::aes(xintercept=observed),colour="green") + ggplot2::xlim(c(-0.1, 0.8))
+```
+
+#### Task B
+
+```{r cache=T}
+stress_shift_replications <- stress_shift_replications %>%
+  dplyr::mutate(
+    Permutation_Pvalue=v_pdp_pvalue_right(Noun_N_Syll_1, Verb_N_Syll_1,
+                                          Noun_N_Observation,
+                                          Verb_N_Observation,
+                                          n_samples=99))
+
+print(stat_power(stress_shift_replications, 99, 0.05))
+```
+
+What we just did was to calculate the statistical power on our data under normal conditions.  
+This value represents the probability a statistic has to correctly reject the null hypothesis while an alternative one is true. It ranges from 0 to 1, with probability of making an error which decreases as the power is close to the higher result.
+
+#### Task C
+
+We'll do here the power analysis but adding some other different conditions each time :
+
+**1.** One tenth the number of observations in each group (651 noun and 673 verb observations)
+```{r echo=F, cache=T}
+Noun_Condition_1 <- rbinom(1000, prob=Proportion_N_Syll_1, size=651)
+Verb_Condition_1 <- rbinom(1000, prob=Proportion_V_Syll_1, size=673)
+
+stress_shift_replications_Condition_1 <- data.frame(
+  "Noun_Percent_Syll_1" = Noun_Condition_1,
+  "Verb_Percent_Syll_1" = Verb_Condition_1,
+  "Replication" = paste0("R", sprintf("%04d", 1:1000)),
+  "Difference_in_Proportion" = Noun_Condition_1/651 - Verb_Condition_1/673
+)
+
+stress_shift_replications_Condition_1 <- stress_shift_replications_Condition_1 %>%
+  dplyr::mutate(
+    Permutation_Pvalue=v_pdp_pvalue_right(Noun_Condition_1, Verb_Condition_1,
+                                          651,
+                                          673,
+                                          n_samples=99))
+
+stat_power(stress_shift_replications_Condition_1, 99, 0.05) %>% print
+```
+
+**2.** Same overall number of observations, but with one tenth as many observations for verbs as for nouns (12034 noun and 1204 verb observations)
+```{r echo=F, cache=T}
+Noun_Condition_2 <- rbinom(1000, prob=Proportion_N_Syll_1, size=12034)
+Verb_Condition_2 <- rbinom(1000, prob=Proportion_V_Syll_1, size=1204)
+
+stress_shift_replications_Condition_2 <- data.frame(
+  "Noun_Percent_Syll_1" = Noun_Condition_2,
+  "Verb_Percent_Syll_1" = Verb_Condition_2,
+  "Replication" = paste0("R", sprintf("%04d", 1:1000)),
+  "Difference_in_Proportion" = Noun_Condition_2/12034 - Verb_Condition_2/1204
+)
+
+stress_shift_replications_Condition_2 <- stress_shift_replications_Condition_2 %>%
+  dplyr::mutate(
+    Permutation_Pvalue=v_pdp_pvalue_right(Noun_Condition_2, Verb_Condition_2,
+                                          12034,
+                                          1204,
+                                          n_samples=99))
+
+stat_power(stress_shift_replications_Condition_2, 99, 0.05) %>% print
+```
+
+The first two cases have the best result in term of statistical power, this is maybe due to the fact that we kept the same probabilities as the original data.  
+
+**3.** Only 33 observations (16 noun observations and 17 verb observations)
+```{r echo=F, cache=T}
+Noun_Condition_3 <- rbinom(1000, prob=Proportion_N_Syll_1, size=16)
+Verb_Condition_3 <- rbinom(1000, prob=Proportion_V_Syll_1, size=17)
+
+stress_shift_replications_Condition_3 <- data.frame(
+  "Noun_Percent_Syll_1" = Noun_Condition_3,
+  "Verb_Percent_Syll_1" = Verb_Condition_3,
+  "Replication" = paste0("R", sprintf("%04d", 1:1000)),
+  "Difference_in_Proportion" = Noun_Condition_3/16 - Verb_Condition_3/17
+)
+
+stress_shift_replications_Condition_3 <- stress_shift_replications_Condition_3 %>%
+  dplyr::mutate(
+    Permutation_Pvalue=v_pdp_pvalue_right(Noun_Condition_3, Verb_Condition_3,
+                                          16,
+                                          17,
+                                          n_samples=99))
+
+stat_power(stress_shift_replications_Condition_3, 99, 0.05) %>% print
+```
+
+Here we just lowered the number of verbs and nouns, this has as a consequence the slightly diminution of statistical power.
+
+**4.** 33 observations, but with one tenth as many observations for verbs as for nouns (30 noun observations and 3 verb observations)
+```{r echo=F, cache=T}
+Noun_Condition_4 <- rbinom(1000, prob=Proportion_N_Syll_1, size=30)
+Verb_Condition_4 <- rbinom(1000, prob=Proportion_V_Syll_1, size=3)
+
+stress_shift_replications_Condition_4 <- data.frame(
+  "Noun_Percent_Syll_1" = Noun_Condition_4,
+  "Verb_Percent_Syll_1" = Verb_Condition_4,
+  "Replication" = paste0("R", sprintf("%04d", 1:1000)),
+  "Difference_in_Proportion" = Noun_Condition_4/30 - Verb_Condition_4/3
+)
+
+stress_shift_replications_Condition_4 <- stress_shift_replications_Condition_4 %>%
+  dplyr::mutate(
+    Permutation_Pvalue=v_pdp_pvalue_right(Noun_Condition_4, Verb_Condition_4,
+                                          30,
+                                          3,
+                                          n_samples=99))
+
+stat_power(stress_shift_replications_Condition_4, 99, 0.05) %>% print
+```
+
+In this case we took a really small amount of data, one of the two classes has a so much small population to be considered. The negative result tells us that under this condition our analysis is really not working.
+
+**5.** One tenth the number of observations, and a probability of “Syllable 1” of 0.52 for nouns and 0.48 for verbs
+```{r echo=F, cache=T}
+Noun_Condition_5 <- rbinom(1000, prob=0.52, size=651)
+Verb_Condition_5 <- rbinom(1000, prob=0.48, size=673)
+
+stress_shift_replications_Condition_5 <- data.frame(
+  "Noun_Percent_Syll_1" = Noun_Condition_5,
+  "Verb_Percent_Syll_1" = Verb_Condition_5,
+  "Replication" = paste0("R", sprintf("%04d", 1:1000)),
+  "Difference_in_Proportion" = Noun_Condition_5/651 - Verb_Condition_5/673
+)
+
+stress_shift_replications_Condition_5 <- stress_shift_replications_Condition_5 %>%
+  dplyr::mutate(
+    Permutation_Pvalue=v_pdp_pvalue_right(Noun_Condition_5, Verb_Condition_5,
+                                          651,
+                                          673,
+                                          n_samples=99))
+
+stat_power(stress_shift_replications_Condition_5, 99, 0.05) %>% print
+```
+
+In condition 5 the probability of verbs and nouns have been reversed, nouns have a higher value than verbs. Still as in condition 4 we have a negative result.
+
+**6.** Original numbers of observations, and new underlying distributions in the two groups: a probability of “Syllable 1” of 0.52 for nouns and 0.48 for verbs
+
+```{r echo=F, cache=T}
+Noun_Condition_6 <- rbinom(1000, prob=0.52, size=Noun_N_Observation)
+Verb_Condition_6 <- rbinom(1000, prob=0.48, size=Verb_N_Observation)
+
+stress_shift_replications_Condition_6 <- data.frame(
+  "Noun_Percent_Syll_1" = Noun_Condition_6,
+  "Verb_Percent_Syll_1" = Verb_Condition_6,
+  "Replication" = paste0("R", sprintf("%04d", 1:1000)),
+  "Difference_in_Proportion" = Noun_Condition_6/Noun_N_Observation - Verb_Condition_6/Verb_N_Observation
+)
+
+stress_shift_replications_Condition_6 <- stress_shift_replications_Condition_6 %>%  dplyr::mutate(
+  Permutation_Pvalue=v_pdp_pvalue_right(Noun_Condition_6, Verb_Condition_6,
+                                        Noun_N_Observation,
+                                        Verb_N_Observation,
+                                        n_samples=99))
+
+stat_power(stress_shift_replications_Condition_6, 99, 0.05) %>% print
+```
+
+In case 6 the original number of verbs and nouns has been kept, what was changed are the probabilities of syllable 1 stress. The statistical power is the higher we after the first two cases. 
+
+## Exercise 4: Testing the independence assumption
+
+```{r echo=F, cache=T}
+Permutation_Pearson_N <- permutation_test(dplyr::filter(stressshift::stress_shift_unamb, Category=="Noun"), "Syllable", pearson_x2_stat, n_samples=99, "Syllable", "Word")
+
+Permutation_Pearson_V <- permutation_test(dplyr::filter(stressshift::stress_shift_unamb, Category=="Verb"), "Syllable", pearson_x2_stat, n_samples=99, "Syllable", "Word")
+
+print(Permutation_Pearson_N)
+print(Permutation_Pearson_V)
+```
+
+What we have here is the result of new permutation tests on our data, which we use to better understand the verbs-nouns syllable stress set we used here since that the observed value is just an approximation and it can't be considered really relevant.
+
+```{r echo=FALSE, message=FALSE}
+permuted <- tibble::as_tibble(Permutation_Pearson_N["permuted"])
+permuted %>% ggplot2::ggplot(.,ggplot2::aes(x=., y=..count..)) + ggplot2::geom_histogram(colour="black", fill="#FDD76D")
+
+permuted <- tibble::as_tibble(Permutation_Pearson_V["permuted"])
+permuted %>% ggplot2::ggplot(.,ggplot2::aes(x=., y=..count..)) + ggplot2::geom_histogram(colour="black", fill="#FDD76D")
+```
+
+Starting from the observed value we observe it is higher for nouns than for verbs, we observe in the plot that the two population are different both in distribution and number. The number appears higher for Nouns and but Verbs have some higher values.  
+The two categories have their peaks at almost the same value.
